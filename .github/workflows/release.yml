@@ -1,0 +1,70 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (e.g. 1.0.0). Leave empty for a test build with no published release."
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build DMG and publish
+    runs-on: macos-latest
+    env:
+      INPUT_VERSION: ${{ github.event.inputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          elif [[ -n "${INPUT_VERSION}" ]]; then
+            echo "version=${INPUT_VERSION#v}" >> "$GITHUB_OUTPUT"
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=0.0.0-ci${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install packaging tools
+        run: brew install librsvg create-dmg
+
+      - name: Generate app icon
+        run: bash scripts/make-icon.sh
+
+      - name: Build app bundle
+        run: VERSION="${{ steps.version.outputs.version }}" bash build-app.sh
+
+      - name: Package DMG
+        run: |
+          bash scripts/make-dmg.sh "${{ steps.version.outputs.version }}"
+          # Stable-named copy so /releases/latest/download/NetPulse.dmg always works
+          cp "dist/NetPulse-${{ steps.version.outputs.version }}.dmg" dist/NetPulse.dmg
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NetPulse-dmg
+          path: dist/*.dmg
+
+      - name: Publish GitHub release
+        if: steps.version.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="v${VERSION}"
+          gh release create "$TAG" dist/*.dmg \
+            --target "${GITHUB_SHA}" \
+            --title "NetPulse ${VERSION}" \
+            --generate-notes

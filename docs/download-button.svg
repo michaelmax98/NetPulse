@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="232" height="44" viewBox="0 0 232 44" role="img" aria-label="Download for macOS">
+  <rect x="0.5" y="0.5" width="231" height="43" rx="10" fill="#24292f" stroke="#444c56"/>
+  <rect x="0.5" y="0.5" width="231" height="43" rx="10" fill="#ffffff" fill-opacity="0.03"/>
+
+  <!-- download arrow into tray -->
+  <g fill="none" stroke="#e6edf3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M 26 13 L 26 25"/>
+    <path d="M 21 21 L 26 26 L 31 21"/>
+    <path d="M 19 30 L 33 30"/>
+  </g>
+
+  <text x="46" y="27.5" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#e6edf3">Download for macOS</text>
+</svg>
