@@ -64,12 +64,16 @@ enum NetSampler {
         var links: [LinkCounters] = []
         buffer.withUnsafeBytes { raw in
             var offset = 0
-            let headerSize = MemoryLayout<if_msghdr>.size
-            while offset + headerSize <= total {
-                let header = raw.loadUnaligned(fromByteOffset: offset, as: if_msghdr.self)
-                let messageLength = Int(header.ifm_msglen)
-                guard messageLength >= headerSize else { break }
-                if header.ifm_type == ifInfo2, offset + MemoryLayout<if_msghdr2>.size <= total {
+            // Every routing message starts with the same prefix: u_short
+            // msglen, u_char version, u_char type. Walk by msglen. Only the
+            // RTM_IFINFO2 records are full if_msghdr2 structs with counters;
+            // the interface-address records interleaved between them are
+            // shorter and are simply skipped, never a reason to stop.
+            while offset + 4 <= total {
+                let messageLength = Int(raw.loadUnaligned(fromByteOffset: offset, as: UInt16.self))
+                let messageType = raw.loadUnaligned(fromByteOffset: offset + 3, as: UInt8.self)
+                guard messageLength > 0, offset + messageLength <= total else { break }
+                if messageType == ifInfo2, offset + MemoryLayout<if_msghdr2>.size <= total {
                     let message = raw.loadUnaligned(fromByteOffset: offset, as: if_msghdr2.self)
                     var nameBytes = [CChar](repeating: 0, count: Int(IF_NAMESIZE) + 1)
                     var name = ""

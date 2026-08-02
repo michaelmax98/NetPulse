@@ -23,36 +23,50 @@ enum GlyphMode: String, CaseIterable, Identifiable {
 }
 
 /// The fixed-width menu bar glyph — same footprint in every mode so the menu
-/// bar never shifts as values change.
+/// bar never shifts as values change. Offline renders a dim wifi.slash in
+/// every mode: quiet and readable, never a wall of red text.
 struct NetGlyph: View {
     let mode: GlyphMode
     let downText: String
     let upText: String
     let online: Bool
+    let darkMenuBar: Bool
 
     static let width: CGFloat = 46
     static let height: CGFloat = 18
 
+    private var baseColor: Color { darkMenuBar ? .white : .black }
+
     var body: some View {
         Group {
-            switch mode {
-            case .both:
-                stacked
-            case .down:
-                single(text: downText, symbol: "arrowtriangle.down.fill", color: NetAccent.down)
-            case .up:
-                single(text: upText, symbol: "arrowtriangle.up.fill", color: NetAccent.up)
-            case .icon:
-                icon
+            if !online {
+                offline
+            } else {
+                switch mode {
+                case .both:
+                    stacked
+                case .down:
+                    single(text: downText, symbol: "arrowtriangle.down.fill", color: NetAccent.down)
+                case .up:
+                    single(text: upText, symbol: "arrowtriangle.up.fill", color: NetAccent.up)
+                case .icon:
+                    icon
+                }
             }
         }
         .frame(width: Self.width, height: Self.height)
     }
 
+    private var offline: some View {
+        Image(systemName: "wifi.slash")
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(baseColor.opacity(0.75))
+    }
+
     private var stacked: some View {
         VStack(alignment: .trailing, spacing: 0) {
-            row(text: downText, symbol: "arrowtriangle.down.fill", color: online ? NetAccent.down : NetAccent.offline)
-            row(text: upText, symbol: "arrowtriangle.up.fill", color: online ? NetAccent.up : NetAccent.offline)
+            row(text: downText, symbol: "arrowtriangle.down.fill", color: NetAccent.down)
+            row(text: upText, symbol: "arrowtriangle.up.fill", color: NetAccent.up)
         }
     }
 
@@ -70,16 +84,16 @@ struct NetGlyph: View {
         HStack(spacing: 2) {
             Image(systemName: symbol)
                 .font(.system(size: 7, weight: .bold))
-            Text(online ? text : "—")
+            Text(text)
                 .font(.system(size: 11, weight: .semibold, design: .rounded).monospacedDigit())
         }
-        .foregroundStyle(online ? color : NetAccent.offline)
+        .foregroundStyle(color)
     }
 
     private var icon: some View {
         Image(systemName: "dot.radiowaves.left.and.right")
             .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(online ? Color.primary : NetAccent.offline)
+            .foregroundStyle(baseColor.opacity(0.9))
     }
 }
 
@@ -90,6 +104,7 @@ struct MenuBarLabel: View {
     @ObservedObject var monitor: NetMonitor
     @AppStorage(DefaultsKey.glyphMode) private var glyphModeRaw = GlyphMode.both.rawValue
     @AppStorage(DefaultsKey.useBits) private var useBits = false
+    @Environment(\.colorScheme) private var colorScheme
 
     private final class RenderCache {
         var key = ""
@@ -102,13 +117,14 @@ struct MenuBarLabel: View {
         let downText = NetFormat.compact(monitor.snapshot.downBps, bits: useBits)
         let upText = NetFormat.compact(monitor.snapshot.upBps, bits: useBits)
         let online = monitor.snapshot.online
-        let key = "\(mode.rawValue)|\(downText)|\(upText)|\(online)"
+        let darkMenuBar = colorScheme == .dark
+        let key = "\(mode.rawValue)|\(downText)|\(upText)|\(online)|\(darkMenuBar)"
 
         let image: NSImage
         if key == Self.cache.key, let cached = Self.cache.image {
             image = cached
         } else {
-            let glyph = NetGlyph(mode: mode, downText: downText, upText: upText, online: online)
+            let glyph = NetGlyph(mode: mode, downText: downText, upText: upText, online: online, darkMenuBar: darkMenuBar)
             let renderer = ImageRenderer(content: glyph)
             renderer.scale = max(2, NSScreen.main?.backingScaleFactor ?? 2)
             let rendered = renderer.nsImage ?? NSImage(size: NSSize(width: NetGlyph.width, height: NetGlyph.height))
