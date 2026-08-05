@@ -154,6 +154,10 @@ struct PanelView: View {
                     .font(.system(size: 21, weight: .bold, design: .rounded).monospacedDigit())
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
+                    // Samples land once a second; ease between them so the
+                    // readout reads as a moving rate rather than a stutter.
+                    .contentTransition(.numericText())
+                    .animation(.easeOut(duration: 0.35), value: value)
             }
             .foregroundStyle(color)
             Text(label)
@@ -167,7 +171,17 @@ struct PanelView: View {
     private var windowedSamples: [NetSample] {
         let window = HistoryWindow(rawValue: historyWindowRaw) ?? .m15
         let cutoff = Date().addingTimeInterval(-window.seconds)
-        let filtered = monitor.history.filter { $0.date >= cutoff }
+        // history is append-ordered, so the cutoff can be found by bisection
+        // instead of scanning all 17,280 retained samples. This runs on every
+        // body evaluation — i.e. once a second while the panel is open.
+        let samples = monitor.history
+        var low = 0
+        var high = samples.count
+        while low < high {
+            let mid = (low + high) / 2
+            if samples[mid].date >= cutoff { high = mid } else { low = mid + 1 }
+        }
+        let filtered = Array(samples[low...])
         let maxPoints = 160
         guard filtered.count > maxPoints else { return filtered }
         let bucketSize = filtered.count / maxPoints + 1
@@ -356,8 +370,12 @@ struct PanelView: View {
             VStack(alignment: .trailing, spacing: 0) {
                 Text("▾ " + NetFormat.rate(row.downBps, bits: useBits))
                     .foregroundStyle(NetAccent.down)
+                    .contentTransition(.numericText())
+                    .animation(.easeOut(duration: 0.35), value: row.downBps)
                 Text("▴ " + NetFormat.rate(row.upBps, bits: useBits))
                     .foregroundStyle(NetAccent.up)
+                    .contentTransition(.numericText())
+                    .animation(.easeOut(duration: 0.35), value: row.upBps)
             }
             .font(.system(size: 9, weight: .semibold, design: .rounded).monospacedDigit())
         }
