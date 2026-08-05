@@ -80,6 +80,7 @@ struct PanelView: View {
     @AppStorage(DefaultsKey.glyphMode) private var glyphModeRaw = GlyphMode.both.rawValue
     @AppStorage(DefaultsKey.useBits) private var useBits = false
     @AppStorage(DefaultsKey.historyWindow) private var historyWindowRaw = HistoryWindow.m15.rawValue
+    @AppStorage(DefaultsKey.idleInterval) private var idleIntervalRaw = IdleInterval.fallback.rawValue
     @AppStorage(DefaultsKey.showSessionSection) private var showSessionSection = false
     @AppStorage(DefaultsKey.showInterfacesSection) private var showInterfacesSection = false
     @AppStorage(DefaultsKey.showSettingsSection) private var showSettingsSection = false
@@ -122,6 +123,12 @@ struct PanelView: View {
                 launchAtLogin = SMAppService.mainApp.status == .enabled
             }
             monitor.refreshFriendlyNames()
+            // Sample at 1 Hz only while the panel is actually on screen.
+            monitor.setPanelOpen(true)
+        }
+        .onDisappear { monitor.setPanelOpen(false) }
+        .onChange(of: idleIntervalRaw) { raw in
+            monitor.setIdleInterval(IdleInterval(rawValue: raw) ?? .fallback)
         }
     }
 
@@ -401,6 +408,22 @@ struct PanelView: View {
                         }
                         .pickerStyle(.segmented)
                         .labelsHidden()
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Update while closed")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Picker("Update while closed", selection: $idleIntervalRaw) {
+                            ForEach(IdleInterval.allCases) { interval in
+                                Text(interval.label).tag(interval.rawValue)
+                            }
+                        }
+                        .labelsHidden()
+                        Text("This panel always updates every second. A longer interval only affects the menu bar, where each reading is the true average over that window.")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.tertiary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
 
                     Toggle("Show speeds in bits (Mbps)", isOn: $useBits)

@@ -4,6 +4,7 @@ enum DefaultsKey {
     static let glyphMode = "glyphMode"
     static let useBits = "useBits"
     static let historyWindow = "historyWindow"
+    static let idleInterval = "idleInterval"
     static let showSessionSection = "showSessionSection"
     static let showInterfacesSection = "showInterfacesSection"
     static let showSettingsSection = "showSettingsSection"

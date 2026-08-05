@@ -99,6 +99,39 @@ enum NetSampler {
     }
 }
 
+// MARK: - Idle cadence
+
+/// How often the meter samples **while the panel is closed** — i.e. what the
+/// app costs just sitting in the menu bar. An open panel always samples once a
+/// second so it still feels live. Because rates are derived from counter
+/// deltas, a longer interval isn't a coarser guess: each reading is the true
+/// average over that whole window.
+enum IdleInterval: String, CaseIterable, Identifiable {
+    case live, s5, s15, m1
+
+    var id: String { rawValue }
+
+    var seconds: TimeInterval {
+        switch self {
+        case .live: return 1
+        case .s5: return 5
+        case .s15: return 15
+        case .m1: return 60
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .live: return "Live (every second)"
+        case .s5: return "Every 5 seconds"
+        case .s15: return "Every 15 seconds"
+        case .m1: return "Every minute"
+        }
+    }
+
+    static let fallback: IdleInterval = .s15
+}
+
 // MARK: - Monitor
 
 final class NetMonitor: ObservableObject {
@@ -107,7 +140,16 @@ final class NetMonitor: ObservableObject {
 
     /// ~24h of 5-second-averaged samples, RAM only — nothing touches disk.
     private static let historyCap = 17_280
-    private static let averagingWindow = 5
+    /// Minimum spacing between charted points, in seconds. Time-based rather
+    /// than tick-based so the chart keeps its resolution at any cadence.
+    private static let averagingSeconds: TimeInterval = 5
+
+    /// Sampling is 1 Hz only while someone is looking at the panel; the rest
+    /// of the time it runs at the user's chosen interval.
+    private var panelOpen = false
+    private var idleInterval: TimeInterval = IdleInterval.fallback.seconds
+    private var currentInterval: TimeInterval { panelOpen ? 1.0 : idleInterval }
+    private var lastHistoryAt: Date?
 
     private var timer: Timer?
     private var previous: [String: (inBytes: UInt64, outBytes: UInt64)] = [:]
@@ -120,6 +162,8 @@ final class NetMonitor: ObservableObject {
     private var peakUp: Double = 0
 
     init() {
+        let stored = UserDefaults.standard.string(forKey: DefaultsKey.idleInterval)
+        idleInterval = (IdleInterval(rawValue: stored ?? "") ?? .fallback).seconds
         refreshFriendlyNames()
         start()
         let center = NSWorkspace.shared.notificationCenter
@@ -136,12 +180,35 @@ final class NetMonitor: ObservableObject {
 
     private func start() {
         guard timer == nil else { return }
-        let timer = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: currentInterval, repeats: true) { [weak self] _ in
             self?.tick()
         }
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
         tick()
+    }
+
+    /// Called as the panel opens and closes. Opening drops to 1 Hz for a live
+    /// readout; closing returns to the idle interval.
+    func setPanelOpen(_ open: Bool) {
+        guard panelOpen != open else { return }
+        panelOpen = open
+        restartTimer()
+    }
+
+    func setIdleInterval(_ interval: IdleInterval) {
+        guard idleInterval != interval.seconds else { return }
+        idleInterval = interval.seconds
+        if !panelOpen { restartTimer() }
+    }
+
+    /// Rebuilds the timer at the current cadence. Deliberately a no-op when
+    /// there is no timer — displays are asleep and must stay that way.
+    private func restartTimer() {
+        guard timer != nil else { return }
+        timer?.invalidate()
+        timer = nil
+        start()
     }
 
     // Displays off means nobody is looking: stop sampling and rendering
@@ -174,7 +241,11 @@ final class NetMonitor: ObservableObject {
         let now = Date()
         let links = NetSampler.readAll()
         let elapsed = previousDate.map { now.timeIntervalSince($0) } ?? 0
-        let usable = elapsed > 0.2 && elapsed < 10
+        // Upper bound has to track the cadence: at a 15s or 60s interval a
+        // healthy gap legitimately exceeds the old fixed 10s ceiling, which
+        // would have discarded every sample. Still wide enough to reject a
+        // genuine stall (sleep, wake, a missed run loop turn).
+        let usable = elapsed > 0.2 && elapsed < max(10, currentInterval * 2.5)
 
         var totalDownDelta: UInt64 = 0
         var totalUpDelta: UInt64 = 0
@@ -254,10 +325,14 @@ final class NetMonitor: ObservableObject {
 
         if usable {
             pending.append((downBps, upBps))
-            if pending.count >= Self.averagingWindow {
+            // Flush on elapsed time, not tick count: at a 15s or 60s cadence a
+            // 5-tick rule would space chart points minutes apart.
+            let due = lastHistoryAt.map { now.timeIntervalSince($0) >= Self.averagingSeconds } ?? true
+            if due {
                 let downAvg = pending.reduce(0.0) { $0 + $1.down } / Double(pending.count)
                 let upAvg = pending.reduce(0.0) { $0 + $1.up } / Double(pending.count)
                 pending.removeAll(keepingCapacity: true)
+                lastHistoryAt = now
                 history.append(NetSample(date: now, downBps: downAvg, upBps: upAvg))
                 if history.count > Self.historyCap {
                     history.removeFirst(history.count - Self.historyCap)
