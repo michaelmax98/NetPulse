@@ -70,24 +70,29 @@ struct NetGlyph: View {
         }
     }
 
+    // Direction is carried by the arrow's colour alone. Tinted digits this
+    // small are hard to read against the menu bar, so the numbers take the
+    // menu bar's own foreground: white on dark, black on light.
     private func row(text: String, symbol: String, color: Color) -> some View {
         HStack(spacing: 1.5) {
             Image(systemName: symbol)
                 .font(.system(size: 5.5, weight: .bold))
+                .foregroundStyle(color)
             Text(text)
                 .font(.system(size: 8.5, weight: .semibold, design: .rounded).monospacedDigit())
+                .foregroundStyle(baseColor)
         }
-        .foregroundStyle(color)
     }
 
     private func single(text: String, symbol: String, color: Color) -> some View {
         HStack(spacing: 2) {
             Image(systemName: symbol)
                 .font(.system(size: 7, weight: .bold))
+                .foregroundStyle(color)
             Text(text)
                 .font(.system(size: 11, weight: .semibold, design: .rounded).monospacedDigit())
+                .foregroundStyle(baseColor)
         }
-        .foregroundStyle(color)
     }
 
     private var icon: some View {
